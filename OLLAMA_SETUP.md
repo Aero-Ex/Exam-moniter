@@ -33,17 +33,17 @@ Download from https://ollama.com/download
 
 ## Step 2: Pull Qwen3-VL Model
 
-The model name can be `qwen2.5-vl:8b` or `qwen2-vl:8b` depending on availability.
+The model name can be `qwen3-vl:8b` or `qwen3-vl:8b` depending on availability.
 
 ```bash
 # Try this first (Qwen 2.5 VL - newer)
-ollama pull qwen2.5-vl:8b
+ollama pull qwen3-vl:8b
 
 # If above doesn't work, try:
-ollama pull qwen2-vl:8b
+ollama pull qwen3-vl:8b
 
 # Or try the 7B variant if 8B is not available:
-ollama pull qwen2.5-vl:7b
+ollama pull qwen3-vl:7b
 ```
 
 **Check available models:**
@@ -75,7 +75,7 @@ Edit `backend/.env`:
 # Use Ollama (enabled by default)
 USE_OLLAMA=true
 OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5-vl:8b
+OLLAMA_MODEL=qwen3-vl:8b
 
 # Database (required)
 DATABASE_URL=postgresql://user:password@localhost:5432/exam_platform
@@ -86,9 +86,9 @@ SECRET_KEY=your-secret-key-here
 ```
 
 **Important:** Update `OLLAMA_MODEL` to match the model you pulled:
-- `qwen2.5-vl:8b` (recommended)
-- `qwen2-vl:8b` (alternative)
-- `qwen2.5-vl:7b` (smaller, faster)
+- `qwen3-vl:8b` (recommended)
+- `qwen3-vl:8b` (alternative)
+- `qwen3-vl:7b` (smaller, faster)
 
 ## Step 5: Verify Setup
 
@@ -96,11 +96,11 @@ SECRET_KEY=your-secret-key-here
 
 ```bash
 # Test with a simple prompt
-ollama run qwen2.5-vl:8b "Describe what you see" < /path/to/test/image.jpg
+ollama run qwen3-vl:8b "Describe what you see" < /path/to/test/image.jpg
 
 # Or using the API
 curl http://localhost:11434/api/generate -d '{
-  "model": "qwen2.5-vl:8b",
+  "model": "qwen3-vl:8b",
   "prompt": "What do you see in this image?",
   "images": ["base64_encoded_image_here"]
 }'
@@ -134,14 +134,14 @@ INFO: Application startup complete.
 ### Issue: "Model not found"
 
 **Solution:**
-1. Pull the model again: `ollama pull qwen2.5-vl:8b`
+1. Pull the model again: `ollama pull qwen3-vl:8b`
 2. Update `OLLAMA_MODEL` in `.env` to match the exact model name from `ollama list`
 
 ### Issue: Slow response times
 
 **Solutions:**
 1. Use a GPU if available
-2. Try a smaller model: `qwen2.5-vl:7b`
+2. Try a smaller model: `qwen3-vl:7b`
 3. Reduce monitoring frequency in frontend (change from 5s to 10s)
 4. Close other applications to free up RAM
 
@@ -278,7 +278,7 @@ ollama ps    # Show running models
 ## Summary
 
 1. ✅ Install Ollama
-2. ✅ Pull Qwen3-VL model: `ollama pull qwen2.5-vl:8b`
+2. ✅ Pull Qwen3-VL model: `ollama pull qwen3-vl:8b`
 3. ✅ Start Ollama: `ollama serve`
 4. ✅ Configure `.env`: Set `USE_OLLAMA=true`
 5. ✅ Start exam platform

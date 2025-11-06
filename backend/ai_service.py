@@ -12,7 +12,7 @@ class AIProctorService:
     def __init__(self):
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
         self.use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
         self.confidence_threshold = float(os.getenv("ALERT_CONFIDENCE_THRESHOLD", "0.7"))
 
@@ -125,43 +125,62 @@ Be LENIENT. Only flag with high confidence (>0.85) when you are certain of a vio
     def _analyze_with_ollama(self, webcam_image_base64: str, screen_image_base64: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
         """Use Ollama (local Qwen3-VL 8B) for analysis"""
 
-        prompt = """You are an AI exam proctor. Analyze the webcam image for CLEAR and OBVIOUS signs of cheating during an online exam.
+        prompt = """You are an expert AI exam proctor with computer vision capabilities. Carefully examine the webcam image and identify ONLY clear, obvious violations.
 
-IMPORTANT: Students naturally look around, think, adjust posture, or glance away briefly. These are NORMAL behaviors. Only flag SUSTAINED or CLEAR violations.
+ANALYSIS INSTRUCTIONS:
+1. First, describe what you see in the image (student position, surroundings, visible objects)
+2. Compare observations against the violation criteria below
+3. Only flag if you have HIGH CONFIDENCE (>0.85) of a clear violation
 
-Flag ONLY these CLEAR violations:
-1. **Multiple people clearly visible** - Another person is helping or talking to the student
-2. **Phone/device in use** - Student is clearly holding and looking at a phone or electronic device
-3. **Reading from materials** - Student is obviously reading from books, notes, or papers for extended periods
-4. **Student absent** - Student has left the frame entirely or is not at their desk
-5. **Talking to someone** - Student is clearly speaking to someone off-camera
+VIOLATIONS TO FLAG (must be CLEAR and OBVIOUS):
 
-DO NOT FLAG these normal behaviors:
-- Brief glances away (thinking, resting eyes)
-- Looking up while thinking
-- Natural eye movements
-- Adjusting position or posture
-- Occasional hand gestures
-- Fidgeting or touching face briefly
+**CRITICAL (Severity 4-5):**
+- Multiple people: Another person clearly visible in frame helping or talking to student
+- Phone/device in use: Student actively holding and looking at phone, tablet, or electronic device
+- Student absent: Empty chair, student not visible, or student has left the desk
 
-Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
+**MODERATE (Severity 3-4):**
+- Reading materials: Student clearly reading from books, papers, or notes for extended periods (>3 seconds)
+- Talking to someone: Student's mouth clearly moving in conversation with someone off-camera
+
+**MINOR (Severity 1-2):**
+- Sustained looking away: Student looking away from screen for extended period (>5 seconds continuously)
+
+NORMAL BEHAVIORS (DO NOT FLAG):
+✓ Brief glances away (1-2 seconds) - thinking or resting eyes
+✓ Looking up while thinking or concentrating
+✓ Natural eye movements around the screen
+✓ Adjusting posture, shifting in seat
+✓ Hand gestures, touching face briefly
+✓ Fidgeting with pen or hands
+✓ Drinking water or brief breaks
+
+OUTPUT FORMAT:
+You must respond with ONLY valid JSON (no markdown, no explanation, no code blocks):
+
 {
     "is_suspicious": false,
-    "confidence": 0.9,
+    "confidence": 0.95,
     "detected_issues": [],
     "severity": 1,
-    "description": "Student appears focused on exam",
+    "description": "Student sitting at desk, looking at screen, appears focused on exam. No violations detected.",
     "alert_type": "none"
 }
 
-alert_type must be one of: "looking_away", "multiple_people", "phone_detected", "reading_from_material", "suspicious_activity", "none"
+FIELD SPECIFICATIONS:
+- "is_suspicious": boolean - true ONLY if you are 85%+ confident of a violation
+- "confidence": float 0.0-1.0 - your confidence level in the assessment
+- "detected_issues": array of strings - specific issues found, empty if none
+- "severity": integer 1-5 - severity level of the violation
+- "description": string - brief description of what you observed (be specific about what you see)
+- "alert_type": must be exactly one of: "looking_away", "multiple_people", "phone_detected", "reading_from_material", "suspicious_activity", "none"
 
-Be LENIENT. Only flag with high confidence (>0.85) when you are certain of a violation."""
+CRITICAL: Be CONSERVATIVE and LENIENT. False positives harm students. Only flag with high confidence."""
 
         if screen_image_base64:
             prompt += "\n\nAlso analyze the screen capture for suspicious activities like switching tabs, opening unauthorized applications, or searching for answers."
 
-        # Ollama API format
+        # Ollama API format with optimized parameters for accuracy
         payload = {
             "model": self.ollama_model,
             "prompt": prompt,
@@ -169,8 +188,12 @@ Be LENIENT. Only flag with high confidence (>0.85) when you are certain of a vio
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": 0.3,
-                "top_p": 0.9
+                "temperature": 0.1,  # Lower temperature for more consistent, accurate results
+                "top_p": 0.85,       # Slightly lower for more focused predictions
+                "top_k": 40,         # Control vocabulary sampling
+                "repeat_penalty": 1.1,  # Reduce repetition
+                "num_predict": 500,  # Ensure adequate response length for JSON
+                "stop": ["}}", "}\n}"]  # Stop after complete JSON
             }
         }
 
@@ -196,13 +219,20 @@ Be LENIENT. Only flag with high confidence (>0.85) when you are certain of a vio
             print(f"[Ollama Debug] Thinking field: {result.get('thinking', 'empty')[:200]}")
             print(f"[Ollama Debug] Using content: {content[:500]}...")  # Print first 500 chars
 
-            # Try to parse JSON
-            # Clean up common formatting issues
+            # Try to parse JSON with enhanced cleaning
             content = content.strip()
+
+            # Remove common markdown artifacts
             if content.startswith("```json"):
                 content = content.split("```json")[1].split("```")[0].strip()
             elif content.startswith("```"):
                 content = content.split("```")[1].split("```")[0].strip()
+
+            # Remove any leading/trailing text outside JSON
+            if "{" in content and "}" in content:
+                start_idx = content.find("{")
+                end_idx = content.rfind("}") + 1
+                content = content[start_idx:end_idx]
 
             # Parse JSON
             try:
@@ -213,23 +243,43 @@ Be LENIENT. Only flag with high confidence (>0.85) when you are certain of a vio
                 print(f"[Ollama Debug] Content that failed to parse: {content[:300]}")
                 # If JSON parsing fails, try to extract JSON object from text
                 import re
-                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content)
+                json_match = re.search(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}', content, re.DOTALL)
                 if json_match:
                     print(f"[Ollama Debug] Attempting to extract JSON from text")
-                    analysis = json.loads(json_match.group(0))
+                    try:
+                        analysis = json.loads(json_match.group(0))
+                    except json.JSONDecodeError:
+                        print(f"[Ollama Debug] Extracted JSON also failed to parse")
+                        raise ValueError("Could not parse JSON from response")
                 else:
                     print(f"[Ollama Debug] Could not find JSON object in response")
                     raise ValueError("Could not parse JSON from response")
 
-            # Validate and normalize the response
+            # Validate and normalize the response with strict schema enforcement
+            valid_alert_types = ["looking_away", "multiple_people", "phone_detected",
+                               "reading_from_material", "suspicious_activity", "none"]
+
+            alert_type = analysis.get("alert_type", "none")
+            if alert_type not in valid_alert_types:
+                print(f"[Ollama Debug] Invalid alert_type '{alert_type}', defaulting to 'none'")
+                alert_type = "none"
+
+            # Ensure detected_issues is a list
+            detected_issues = analysis.get("detected_issues", [])
+            if not isinstance(detected_issues, list):
+                detected_issues = [str(detected_issues)] if detected_issues else []
+
             analysis = {
                 "is_suspicious": bool(analysis.get("is_suspicious", False)),
-                "confidence": float(analysis.get("confidence", 0.5)),
-                "detected_issues": analysis.get("detected_issues", []),
-                "severity": int(analysis.get("severity", 1)),
-                "description": str(analysis.get("description", "Analysis completed")),
-                "alert_type": analysis.get("alert_type", "none")
+                "confidence": max(0.0, min(1.0, float(analysis.get("confidence", 0.5)))),  # Clamp to 0-1
+                "detected_issues": detected_issues,
+                "severity": max(1, min(5, int(analysis.get("severity", 1)))),  # Clamp to 1-5
+                "description": str(analysis.get("description", "Analysis completed"))[:500],  # Limit length
+                "alert_type": alert_type
             }
+
+            print(f"[Ollama Debug] Validated analysis: is_suspicious={analysis['is_suspicious']}, "
+                  f"confidence={analysis['confidence']:.2f}, alert_type={analysis['alert_type']}")
 
             is_suspicious = analysis["is_suspicious"] and analysis["confidence"] >= self.confidence_threshold
 
