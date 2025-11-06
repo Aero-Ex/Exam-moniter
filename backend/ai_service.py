@@ -125,57 +125,67 @@ Be LENIENT. Only flag with high confidence (>0.85) when you are certain of a vio
     def _analyze_with_ollama(self, webcam_image_base64: str, screen_image_base64: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
         """Use Ollama (local Qwen3-VL 8B) for analysis"""
 
-        prompt = """You are an expert AI exam proctor with computer vision capabilities. Carefully examine the webcam image and identify ONLY clear, obvious violations.
+        prompt = """You are an expert AI exam proctor with computer vision capabilities. Carefully examine the webcam image and identify violations.
+
+CRITICAL REQUIREMENTS FOR VALID EXAM SETUP:
+1. Student's FULL FACE must be clearly visible (not just partial head/forehead)
+2. Student must be facing the camera in a seated position
+3. Student should be at a desk/workstation (not just blank wall)
+4. Student should appear engaged with exam (looking at screen area)
 
 ANALYSIS INSTRUCTIONS:
-1. First, describe what you see in the image (student position, surroundings, visible objects)
-2. Compare observations against the violation criteria below
-3. Only flag if you have HIGH CONFIDENCE (>0.85) of a clear violation
+1. First, check if the exam setup requirements above are met
+2. Describe what you see (student position, visibility, surroundings, objects)
+3. Compare observations against violation criteria below
+4. Flag if you have HIGH CONFIDENCE (>0.85) of a violation
 
-VIOLATIONS TO FLAG (must be CLEAR and OBVIOUS):
+VIOLATIONS TO FLAG:
 
 **CRITICAL (Severity 4-5):**
-- Multiple people: Another person clearly visible in frame helping or talking to student
-- Phone/device in use: Student actively holding and looking at phone, tablet, or electronic device
-- Student absent: Empty chair, student not visible, or student has left the desk
+- **Student absent or improper position**:
+  * Student not visible in frame OR only partially visible (just forehead/top of head)
+  * Empty chair or student has left the desk
+  * Only showing blank wall or ceiling with no/minimal student visibility
+  * Student lying down or in improper exam position
+  * Face not clearly visible or turned completely away from camera
+- **Multiple people**: Another person clearly visible in frame
+- **Phone/device in use**: Student holding and looking at phone, tablet, or electronic device
 
 **MODERATE (Severity 3-4):**
-- Reading materials: Student clearly reading from books, papers, or notes for extended periods (>3 seconds)
-- Talking to someone: Student's mouth clearly moving in conversation with someone off-camera
+- **Reading materials**: Books, papers, or notes visible and student actively reading them
+- **Talking to someone**: Student's mouth clearly moving in conversation
 
-**MINOR (Severity 1-2):**
-- Sustained looking away: Student looking away from screen for extended period (>5 seconds continuously)
+**MINOR (Severity 2-3):**
+- **Suspicious behavior**: Unusual gestures, making faces, sticking tongue out, excessive movement
+- **Looking away sustained**: Looking away from screen area for extended period (>5 seconds)
 
 NORMAL BEHAVIORS (DO NOT FLAG):
-✓ Brief glances away (1-2 seconds) - thinking or resting eyes
-✓ Looking up while thinking or concentrating
-✓ Natural eye movements around the screen
-✓ Adjusting posture, shifting in seat
-✓ Hand gestures, touching face briefly
-✓ Fidgeting with pen or hands
-✓ Drinking water or brief breaks
+✓ Brief glances away (1-2 seconds) for thinking
+✓ Looking up briefly while concentrating
+✓ Natural eye movements
+✓ Adjusting posture slightly
+✓ Touching face briefly
+✓ Drinking water quickly
 
-OUTPUT FORMAT:
-You must respond with ONLY valid JSON (no markdown, no explanation, no code blocks):
-
+OUTPUT FORMAT (JSON only, no markdown):
 {
     "is_suspicious": false,
     "confidence": 0.95,
     "detected_issues": [],
     "severity": 1,
-    "description": "Student sitting at desk, looking at screen, appears focused on exam. No violations detected.",
+    "description": "Student sitting at desk facing camera, full face visible, appears focused. Proper exam setup.",
     "alert_type": "none"
 }
 
-FIELD SPECIFICATIONS:
-- "is_suspicious": boolean - true ONLY if you are 85%+ confident of a violation
-- "confidence": float 0.0-1.0 - your confidence level in the assessment
-- "detected_issues": array of strings - specific issues found, empty if none
-- "severity": integer 1-5 - severity level of the violation
-- "description": string - brief description of what you observed (be specific about what you see)
-- "alert_type": must be exactly one of: "looking_away", "multiple_people", "phone_detected", "reading_from_material", "suspicious_activity", "none"
+FIELD RULES:
+- "is_suspicious": true if ANY violation detected with 85%+ confidence
+- "confidence": float 0.0-1.0
+- "detected_issues": list violations (e.g., ["Student not properly positioned", "Face not fully visible"])
+- "severity": 1-5 based on violation type
+- "description": what you observed specifically
+- "alert_type": "looking_away" | "multiple_people" | "phone_detected" | "reading_from_material" | "suspicious_activity" | "none"
 
-CRITICAL: Be CONSERVATIVE and LENIENT. False positives harm students. Only flag with high confidence."""
+IMPORTANT: If student is not properly visible or positioned, flag as suspicious_activity with severity 3-4."""
 
         if screen_image_base64:
             prompt += "\n\nAlso analyze the screen capture for suspicious activities like switching tabs, opening unauthorized applications, or searching for answers."
