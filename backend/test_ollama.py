@@ -50,7 +50,7 @@ def test_model_availability():
     print("=" * 60)
 
     ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-vl:8b")
+    ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
 
     try:
         response = requests.get(f"{ollama_url}/api/tags", timeout=5)
@@ -78,7 +78,7 @@ def test_model_inference():
     print("=" * 60)
 
     ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-vl:8b")
+    ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
 
     # Simple text-only test
     payload = {

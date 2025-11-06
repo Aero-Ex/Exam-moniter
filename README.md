@@ -158,7 +158,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 # AI Proctoring - LOCAL OLLAMA (Default & Recommended!)
 USE_OLLAMA=true
 OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5-vl:8b
+OLLAMA_MODEL=qwen3-vl:8b
 
 # Alternative: OpenAI (Cloud API)
 # USE_OLLAMA=false
@@ -195,7 +195,7 @@ CORS_ORIGINS=["http://localhost:5173", "http://localhost:3000"]
 curl -fsSL https://ollama.com/install.sh | sh
 
 # 2. Pull Qwen3-VL model
-ollama pull qwen2.5-vl:8b
+ollama pull qwen3-vl:8b
 
 # 3. Start Ollama (if not running)
 ollama serve
