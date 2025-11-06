@@ -125,72 +125,31 @@ Be LENIENT. Only flag with high confidence (>0.85) when you are certain of a vio
     def _analyze_with_ollama(self, webcam_image_base64: str, screen_image_base64: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
         """Use Ollama (local Qwen3-VL 8B) for analysis"""
 
-        prompt = """You are an expert AI exam proctor with computer vision capabilities. Carefully examine the webcam image and identify violations.
+        prompt = """AI Exam Proctor: Analyze webcam for violations. Respond ONLY with JSON.
 
-CRITICAL REQUIREMENTS FOR VALID EXAM SETUP:
-1. Student's FULL FACE must be clearly visible (not just partial head/forehead)
-2. Student must be facing the camera in a seated position
-3. Student should be at a desk/workstation (not just blank wall)
-4. Student should appear engaged with exam (looking at screen area)
+REQUIRED SETUP: Full face visible, seated at desk, facing camera.
 
-ANALYSIS INSTRUCTIONS:
-1. First, check if the exam setup requirements above are met
-2. Describe what you see (student position, visibility, surroundings, objects)
-3. Compare observations against violation criteria below
-4. Flag if you have HIGH CONFIDENCE (>0.85) of a violation
+FLAG AS VIOLATIONS (severity 3-5):
+- Student not visible/partial visibility/only wall visible
+- Multiple people in frame
+- Phone/device in hand
+- Reading books/notes
+- Talking to someone
+- Making unusual faces/gestures
 
-VIOLATIONS TO FLAG:
+IGNORE (normal behavior):
+- Brief glances away, looking up, adjusting position, touching face
 
-**CRITICAL (Severity 4-5):**
-- **Student absent or improper position**:
-  * Student not visible in frame OR only partially visible (just forehead/top of head)
-  * Empty chair or student has left the desk
-  * Only showing blank wall or ceiling with no/minimal student visibility
-  * Student lying down or in improper exam position
-  * Face not clearly visible or turned completely away from camera
-- **Multiple people**: Another person clearly visible in frame
-- **Phone/device in use**: Student holding and looking at phone, tablet, or electronic device
+JSON OUTPUT:
+{"is_suspicious": false, "confidence": 0.95, "detected_issues": [], "severity": 1, "description": "Brief observation", "alert_type": "none"}
 
-**MODERATE (Severity 3-4):**
-- **Reading materials**: Books, papers, or notes visible and student actively reading them
-- **Talking to someone**: Student's mouth clearly moving in conversation
-
-**MINOR (Severity 2-3):**
-- **Suspicious behavior**: Unusual gestures, making faces, sticking tongue out, excessive movement
-- **Looking away sustained**: Looking away from screen area for extended period (>5 seconds)
-
-NORMAL BEHAVIORS (DO NOT FLAG):
-✓ Brief glances away (1-2 seconds) for thinking
-✓ Looking up briefly while concentrating
-✓ Natural eye movements
-✓ Adjusting posture slightly
-✓ Touching face briefly
-✓ Drinking water quickly
-
-OUTPUT FORMAT (JSON only, no markdown):
-{
-    "is_suspicious": false,
-    "confidence": 0.95,
-    "detected_issues": [],
-    "severity": 1,
-    "description": "Student sitting at desk facing camera, full face visible, appears focused. Proper exam setup.",
-    "alert_type": "none"
-}
-
-FIELD RULES:
-- "is_suspicious": true if ANY violation detected with 85%+ confidence
-- "confidence": float 0.0-1.0
-- "detected_issues": list violations (e.g., ["Student not properly positioned", "Face not fully visible"])
-- "severity": 1-5 based on violation type
-- "description": what you observed specifically
-- "alert_type": "looking_away" | "multiple_people" | "phone_detected" | "reading_from_material" | "suspicious_activity" | "none"
-
-IMPORTANT: If student is not properly visible or positioned, flag as suspicious_activity with severity 3-4."""
+alert_type: "looking_away"|"multiple_people"|"phone_detected"|"reading_from_material"|"suspicious_activity"|"none"
+Flag is_suspicious=true only if 85%+ confident of violation."""
 
         if screen_image_base64:
             prompt += "\n\nAlso analyze the screen capture for suspicious activities like switching tabs, opening unauthorized applications, or searching for answers."
 
-        # Ollama API format with optimized parameters for accuracy
+        # Ollama API format - OPTIMIZED FOR SPEED (real-time monitoring every 0.5s)
         payload = {
             "model": self.ollama_model,
             "prompt": prompt,
@@ -198,12 +157,14 @@ IMPORTANT: If student is not properly visible or positioned, flag as suspicious_
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": 0.1,  # Lower temperature for more consistent, accurate results
-                "top_p": 0.85,       # Slightly lower for more focused predictions
-                "top_k": 40,         # Control vocabulary sampling
-                "repeat_penalty": 1.1,  # Reduce repetition
-                "num_predict": 500,  # Ensure adequate response length for JSON
-                "stop": ["}}", "}\n}"]  # Stop after complete JSON
+                "temperature": 0.2,      # Balanced for speed and consistency
+                "top_p": 0.9,            # Faster sampling
+                "top_k": 20,             # Reduced for speed
+                "num_predict": 256,      # Reduced from 500 - JSON response is ~150 chars
+                "num_ctx": 2048,         # Reduced context window for faster processing
+                "num_gpu": 99,           # Use all available GPU layers for speed
+                "num_thread": 8,         # Parallel processing
+                "repeat_penalty": 1.05,  # Lower penalty for faster generation
             }
         }
 
@@ -212,14 +173,20 @@ IMPORTANT: If student is not properly visible or positioned, flag as suspicious_
             payload["images"].append(screen_image_base64)
 
         try:
+            import time
+            start_time = time.time()
+
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
                 json=payload,
-                timeout=30
+                timeout=5  # Reduced from 30s - we need fast responses for real-time monitoring
             )
             response.raise_for_status()
 
             result = response.json()
+
+            inference_time = time.time() - start_time
+            print(f"[Ollama Performance] Inference completed in {inference_time:.2f}s")
 
             # Qwen3 models may return JSON in "thinking" field instead of "response" field
             content = result.get("response", "") or result.get("thinking", "")
